@@ -4,16 +4,76 @@ import discord
 import random
 import uuid
 import time
-import json
-import sys
 
+# get command line args
+import sys
 CONFIGFILE = sys.argv[1]
+DATABASE_PATH = sys.argv[2]
+
+# get configuration file
+import json
 CONFIG = json.load(open(CONFIGFILE,'r'))
 AUTHORIZATION_TOKEN = CONFIG['token']
 
+# create database connection
+import sqlite3
+conn = sqlite3.connect(DATABASE_PATH)
+
 ########################################################################
 #
-# discordMessageToDict
+# FUNCTION: runQuery(sql,ctx)
+# function to extract the data from the raw message class to a dict
+#
+########################################################################
+def runQuery(sql,ctx):
+    c = ctx.cursor()
+    c.execute(sql)
+    return c.fetchall()
+
+
+########################################################################
+#
+# FUNCTION: commitQuery(sql,ctx)
+# function to extract the data from the raw message class to a dict
+#
+########################################################################
+def commitQuery(sql,ctx):
+    c = ctx.cursor()
+    c.execute(sql)
+    ctx.commit()
+    return c.fetchall()
+
+########################################################################
+#
+# FUNCTION: getActiveChannelIDs
+# function to extract the data from the raw message class to a dict
+#
+########################################################################
+def getActiveChannelIDs(ctx):
+    sql = f'''select distinct channel_id
+        from channels
+        where active = True
+    '''
+    return runQuery(sql,ctx)[0]
+
+########################################################################
+#
+# FUNCTION: getActiveServerIDs
+# function to extract the data from the raw message class to a dict
+#
+########################################################################
+def getActiveServerIDs(cursor):
+    sql = f'''select distinct guild_id
+        from servers
+        where active = True
+    '''
+    cursor.execute(sql)
+    fetchall = cursor.fetchall()
+    print(fetchall)
+
+########################################################################
+#
+# FUNCTION: discordMessageToDict
 # function to extract the data from the raw message class to a dict
 #
 ########################################################################
@@ -111,38 +171,71 @@ def discordMessageToDict(message):
             'message_body': message_body
         }
 
+########################################################################
+#
+# OPERATION: Create SQL tables
+#
+########################################################################
+
+try:
+    createTableQuery_channels = '''CREATE TABLE or REPLACE channels
+                (date_added int, active bool, channel_name varchar, channel_id int, guild_name varchar, guild_id int)'''
+    commitQuery(sql=createTableQuery_channels,ctx=conn)
+except:
+    print('[SQL] table CHANNELS already created.')
+    pass
+try:
+    createTableQuery_messages = '''CREATE TABLE messages
+                (timestamp int, uid varchar, message_body varchar, raw variant)'''
+    commitQuery(sql=createTableQuery_messages,ctx=conn)
+except:
+    print('[SQL] table MESSAGES already created.')
+    pass
+
 # initialize discord client
 client = discord.Client()
 
 # handler for when connected to server
 @client.event
 async def on_ready():
-    print('We have logged in as {0.user}'.format(client))
+    print('[DSC] logged into Discord as {0.user}'.format(client))
 
 # handler for ANY MESSAGE sent to the server on ANY CHANNEL.
 # ToDo: have users direct the bot to only grab data from specific channels.
 @client.event
 async def on_message(message):
-    
-    # create a unique identifier for the event
-    uid = str(uuid.uuid4()).replace('-','')
-    
-    # generate a timestamp
-    timestamp = time.time()
+    # only run iff in approved channel list
+    if message.channel.id in getActiveChannelIDs(conn):
+        # create a unique identifier for the event
+        uid = str(uuid.uuid4()).replace('-','')
+        
+        # generate a timestamp
+        timestamp = time.time()
 
-    # generate data
-    data = discordMessageToDict(message)
+        # generate data
+        data = discordMessageToDict(message)
+        dataJSON = json.dumps(data)
 
-    # message body
-    message_body = data['message_body']
+        # message body
+        message_body = data['message_body']
 
-    # print message to stdout
-    print({
-        'uid':uid,
-        'timestamp':float(timestamp),
-        'message_body':message_body,
-        'raw':data
-    })
+        # store data to database
+        sql = f'''insert into messages (
+            timestamp,
+            uid,
+            message_body,
+            raw
+        ) values (
+            '{timestamp}',
+            '{uid}',
+            '{message_body}',
+            '{dataJSON}'
+        )
+        '''
+        commitQuery(sql, conn)
+
+        # print message to stdout
+        print(f'[DSC] New message: {message_body}')
 
 
 # main runtime

@@ -1,6 +1,11 @@
 # discord-channel-streaming-bot
 Discord bot for streaming data from an authorized channel within a server
 
+## Database
+Write now the system relies on a sqlite3 database to store data produced by the bot.
+
+As of now, servers need to be MANUALLY ADDED via connection to the database.
+
 
 ## Python dev setup
 Set up a virtual environment by running
