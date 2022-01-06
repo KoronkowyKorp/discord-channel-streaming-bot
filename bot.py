@@ -4,6 +4,7 @@ import discord
 import random
 import uuid
 import time
+import datetime
 
 # get command line args
 import sys
@@ -58,18 +59,31 @@ def getActiveChannelIDs(ctx):
 
 ########################################################################
 #
-# FUNCTION: getActiveServerIDs
+# FUNCTION: getActiveChannelsForGuildID
 # function to extract the data from the raw message class to a dict
 #
 ########################################################################
-def getActiveServerIDs(cursor):
-    sql = f'''select distinct guild_id
-        from servers
+def getActiveChannelsForGuildID(guild_id,ctx):
+    sql = f'''select date_added, channel_id, channel_name
+        from channels
         where active = True
+        and guild_id = {guild_id}
     '''
-    cursor.execute(sql)
-    fetchall = cursor.fetchall()
-    print(fetchall)
+    c = ctx.cursor()
+    c.execute(sql)
+    returnData = []
+    for row in c.fetchall():
+        timestamp = row[0]
+        channel_id = row[1]
+        channel_name = row[2]
+        dt = datetime.datetime.fromtimestamp(timestamp)
+        str_time = dt.strftime('%Y-%m-%d %H:%M:%S')
+        returnData.append({
+            'date_added': f'{str_time} UTC',
+            'channel_id':channel_id,
+            'channel_name':channel_name
+        })
+    return returnData
 
 ########################################################################
 #
@@ -178,7 +192,7 @@ def discordMessageToDict(message):
 ########################################################################
 
 try:
-    createTableQuery_channels = '''CREATE TABLE or REPLACE channels
+    createTableQuery_channels = '''CREATE TABLE channels
                 (date_added int, active bool, channel_name varchar, channel_id int, guild_name varchar, guild_id int)'''
     commitQuery(sql=createTableQuery_channels,ctx=conn)
 except:
@@ -200,12 +214,24 @@ client = discord.Client()
 async def on_ready():
     print('[DSC] logged into Discord as {0.user}'.format(client))
 
+
+
+
 # handler for ANY MESSAGE sent to the server on ANY CHANNEL.
 # ToDo: have users direct the bot to only grab data from specific channels.
 @client.event
 async def on_message(message):
-    # only run iff in approved channel list
-    if message.channel.id in getActiveChannelIDs(conn):
+
+    # activechannel command
+    bot_id = client.user.id
+    if message.content.startswith(f'<@!{bot_id}> activechannels'):
+        guild_id = message.guild.id
+        data = getActiveChannelsForGuildID(guild_id, conn)
+        dataJSON = json.dumps(data,indent=4)
+        await message.channel.send(f'```\n{dataJSON}\n```')
+
+    # only run if in approved channel list
+    elif message.channel.id in getActiveChannelIDs(conn):
         # create a unique identifier for the event
         uid = str(uuid.uuid4()).replace('-','')
         
