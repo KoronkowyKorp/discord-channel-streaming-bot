@@ -221,10 +221,12 @@ async def on_ready():
 # ToDo: have users direct the bot to only grab data from specific channels.
 @client.event
 async def on_message(message):
-
-    # activechannel command
+    # ignore bot's own messages
     bot_id = client.user.id
-    if message.content.startswith(f'<@!{bot_id}> activechannels'):
+    if message.author.id == bot_id:
+        exit
+    # activechannel command
+    elif message.content.startswith(f'<@!{bot_id}> activechannels'):
         guild_id = message.guild.id
         data = getActiveChannelsForGuildID(guild_id, conn)
         dataJSON = json.dumps(data,indent=4)
